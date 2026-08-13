@@ -17,83 +17,59 @@
   <path d="M0,200 C150,160 300,240 450,190 C600,140 750,220 900,180 C1000,155 1100,190 1200,170" />
 </svg>
 
-<!-- Landing / home view -->
-<section id="homeView" class="home-view">
-  <div class="home-hero">
-    <span class="brand-mark home-mark">🌿</span>
-    <h1 class="home-title">Cangrejal <em>Alerta</em></h1>
-    <p class="home-sub">Reportes comunitarios de la Cuenca del Río Cangrejal</p>
-    <p class="home-desc">
-      Consulta en tiempo real derrumbes, inundaciones, puentes dañados y otros incidentes
-      reportados y verificados por tus vecinos antes de salir de viaje.
-    </p>
-    <div class="home-stats">
-      <div class="home-stat"><span id="statTotal">0</span><small>reportes activos</small></div>
-      <div class="home-stat"><span id="statVerified">0</span><small>verificados</small></div>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">🌿</span>
+    <div class="brand-text">
+      <h1>Cangrejal <em>Alerta</em></h1>
+      <p class="brand-sub">Cuenca del Río Cangrejal · reportes en tiempo real</p>
     </div>
-    <button id="goToFeedBtn" class="home-cta">Ver alertas publicadas →</button>
   </div>
-</section>
-
-<!-- Feed view (hidden until the user enters from the home view) -->
-<div id="feedView" hidden>
-
-  <header class="topbar">
-    <div class="brand">
-      <button id="backHomeBtn" class="icon-btn back-btn" aria-label="Volver al inicio">←</button>
-      <span class="brand-mark">🌿</span>
-      <div class="brand-text">
-        <h1>Cangrejal <em>Alerta</em></h1>
-        <p class="brand-sub">Cuenca del Río Cangrejal · reportes en tiempo real</p>
-      </div>
+  <div class="user-box">
+    <span class="user-label">Vecino/a</span>
+    <input id="username" type="text" placeholder="Tu nombre" maxlength="24">
+    <div class="rep-line">
+      <span id="repStars">☆☆☆☆☆</span>
+      <span id="repScore" class="rep-score">0 pts</span>
     </div>
-    <div class="user-box">
-      <span class="user-label">Vecino/a</span>
-      <input id="username" type="text" placeholder="Tu nombre" maxlength="24">
-      <div class="rep-line">
-        <span id="repStars">☆☆☆☆☆</span>
-        <span id="repScore" class="rep-score">0 pts</span>
-      </div>
-    </div>
-  </header>
+  </div>
+</header>
 
-  <nav class="filters" aria-label="Filtrar por categoría">
-    <button class="chip active" data-filter="todos">Todos</button>
-    <button class="chip" data-filter="derrumbe">🚧 Derrumbe</button>
-    <button class="chip" data-filter="inundacion">🌊 Inundación</button>
-    <button class="chip" data-filter="puente">🌉 Puente</button>
-    <button class="chip" data-filter="arbol">🌳 Árbol caído</button>
-    <button class="chip" data-filter="accidente">🚗 Accidente</button>
-    <button class="chip" data-filter="felino">🐆 Felino</button>
-    <button class="chip" data-filter="energia">⚡ Energía</button>
-    <button class="chip" data-filter="bloqueo">🚫 Bloqueo</button>
-    <button class="chip" data-filter="medica">🚑 Médica</button>
-    <button class="chip" data-filter="incendio">🔥 Incendio</button>
-    <button class="chip" data-filter="lluvia">🌧 Lluvia fuerte</button>
-    <button class="chip" data-filter="otro">Otro</button>
-  </nav>
+<nav class="filters" aria-label="Filtrar por categoría">
+  <button class="chip active" data-filter="todos">Todos</button>
+  <button class="chip" data-filter="derrumbe">🚧 Derrumbe</button>
+  <button class="chip" data-filter="inundacion">🌊 Inundación</button>
+  <button class="chip" data-filter="puente">🌉 Puente</button>
+  <button class="chip" data-filter="arbol">🌳 Árbol caído</button>
+  <button class="chip" data-filter="accidente">🚗 Accidente</button>
+  <button class="chip" data-filter="felino">🐆 Felino</button>
+  <button class="chip" data-filter="energia">⚡ Energía</button>
+  <button class="chip" data-filter="bloqueo">🚫 Bloqueo</button>
+  <button class="chip" data-filter="medica">🚑 Médica</button>
+  <button class="chip" data-filter="incendio">🔥 Incendio</button>
+  <button class="chip" data-filter="lluvia">🌧 Lluvia fuerte</button>
+  <button class="chip" data-filter="otro">Otro</button>
+</nav>
 
-  <main class="feed-wrap">
-    <div id="emptyState" class="empty-state" hidden>
-      <p class="empty-glyph">〜</p>
-      <h2>Aún no hay reportes en esta categoría</h2>
-      <p>Sé la primera persona en avisar a la comunidad. Toca "Reportar incidente" para empezar.</p>
-    </div>
-    <section id="feed" class="feed"></section>
-  </main>
+<main class="feed-wrap">
+  <div id="emptyState" class="empty-state" hidden>
+    <p class="empty-glyph">〜</p>
+    <h2>Aún no hay reportes en esta categoría</h2>
+    <p>Sé la primera persona en avisar a la comunidad. Toca "Reportar incidente" para empezar.</p>
+  </div>
+  <section id="feed" class="feed"></section>
+</main>
 
-  <button id="openFormBtn" class="fab">
-    <span class="fab-icon">＋</span> Reportar incidente
-  </button>
-
-</div>
+<button id="openFormBtn" class="fab">
+  <span class="fab-icon">＋</span> Reportar incidente
+</button>
 
 <!-- Report form modal -->
 <div id="formModal" class="modal-overlay" hidden>
   <div class="modal">
     <div class="modal-head">
       <h2>Nuevo reporte</h2>
-      <button id="closeFormBtn" class="icon-btn" aria-label="Cerrar">✕</button>
+      <button type="button" id="closeFormBtn" class="icon-btn" aria-label="Cerrar">✕</button>
     </div>
 
     <form id="reportForm">
@@ -151,8 +127,28 @@
       </div>
 
       <label class="field checkbox-field">
+        <input type="checkbox" id="isPatronato">
+        <span>Publico como miembro de Patronato</span>
+      </label>
+      <label class="field checkbox-field">
+        <input type="checkbox" id="isCopeco">
+        <span>Publico como miembro de COPECO</span>
+      </label>
+      <label class="field checkbox-field">
+        <input type="checkbox" id="isPolicia">
+        <span>Publico como miembro de Policía</span>
+      </label>
+      <label class="field checkbox-field">
+        <input type="checkbox" id="isAlcaldia">
+        <span>Publico como miembro de Alcaldía</span>
+      </label>
+      <label class="field checkbox-field">
+        <input type="checkbox" id="isBomberos">
+        <span>Publico como miembro de Bomberos</span>
+      </label>
+       <label class="field checkbox-field">
         <input type="checkbox" id="isModerator">
-        <span>Publico como miembro de Patronato / COPECO / Alcaldía / Policía / Bomberos (marca oficial)</span>
+        <span>Público como anonimo</span>
       </label>
 
       <p id="formError" class="form-error" hidden></p>

@@ -177,7 +177,6 @@ document.getElementById('feed').addEventListener('click', (e) => {
 
   saveReports();
   render();
-  renderHomeStats();
 });
 
 // ---------- Filters ----------
@@ -282,7 +281,6 @@ document.getElementById('reportForm').addEventListener('submit', (e) => {
   };
   reports.unshift(report);
   saveReports();
-  renderHomeStats();
   closeForm();
   activeFilter = 'todos';
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
@@ -301,30 +299,6 @@ document.getElementById('username').addEventListener('input', () => {
 
 // ---------- Refresh relative times periodically ----------
 setInterval(render, 60000);
-
-// ---------- Home / feed navigation ----------
-const homeView = document.getElementById('homeView');
-const feedView = document.getElementById('feedView');
-
-function renderHomeStats(){
-  document.getElementById('statTotal').textContent = reports.length;
-  const verifiedCount = reports.filter(r => (r.confirms.length - r.denies.length) >= VERIFY_THRESHOLD).length;
-  document.getElementById('statVerified').textContent = verifiedCount;
-}
-
-function goToFeed(){
-  homeView.hidden = true;
-  feedView.hidden = false;
-  render();
-}
-function goToHome(){
-  feedView.hidden = true;
-  homeView.hidden = false;
-  renderHomeStats();
-}
-
-document.getElementById('goToFeedBtn').addEventListener('click', goToFeed);
-document.getElementById('backHomeBtn').addEventListener('click', goToHome);
 
 // ---------- Seed example data on first run ----------
 function seedIfEmpty(){
@@ -357,4 +331,3 @@ function seedIfEmpty(){
 seedIfEmpty();
 renderUserRep();
 render();
-renderHomeStats();
