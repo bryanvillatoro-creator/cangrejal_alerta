@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cangrejal Alerta — Reportes comunitarios de la cuenca</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Contour texture, decorative -->
+<svg class="contour-bg" viewBox="0 0 1200 300" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0,120 C150,80 300,160 450,110 C600,60 750,140 900,100 C1000,75 1100,110 1200,90" />
+  <path d="M0,160 C150,120 300,200 450,150 C600,100 750,180 900,140 C1000,115 1100,150 1200,130" />
+  <path d="M0,200 C150,160 300,240 450,190 C600,140 750,220 900,180 C1000,155 1100,190 1200,170" />
+</svg>
+
+<!-- Landing / home view -->
+<section id="homeView" class="home-view">
+  <div class="home-hero">
+    <span class="brand-mark home-mark">🌿</span>
+    <h1 class="home-title">Cangrejal <em>Alerta</em></h1>
+    <p class="home-sub">Reportes comunitarios de la Cuenca del Río Cangrejal</p>
+    <p class="home-desc">
+      Consulta en tiempo real derrumbes, inundaciones, puentes dañados y otros incidentes
+      reportados y verificados por tus vecinos antes de salir de viaje.
+    </p>
+    <div class="home-stats">
+      <div class="home-stat"><span id="statTotal">0</span><small>reportes activos</small></div>
+      <div class="home-stat"><span id="statVerified">0</span><small>verificados</small></div>
+    </div>
+    <button id="goToFeedBtn" class="home-cta">Ver alertas publicadas →</button>
+  </div>
+</section>
+
+<!-- Feed view (hidden until the user enters from the home view) -->
+<div id="feedView" hidden>
+
+  <header class="topbar">
+    <div class="brand">
+      <button id="backHomeBtn" class="icon-btn back-btn" aria-label="Volver al inicio">←</button>
+      <span class="brand-mark">🌿</span>
+      <div class="brand-text">
+        <h1>Cangrejal <em>Alerta</em></h1>
+        <p class="brand-sub">Cuenca del Río Cangrejal · reportes en tiempo real</p>
+      </div>
+    </div>
+    <div class="user-box">
+      <span class="user-label">Vecino/a</span>
+      <input id="username" type="text" placeholder="Tu nombre" maxlength="24">
+      <div class="rep-line">
+        <span id="repStars">☆☆☆☆☆</span>
+        <span id="repScore" class="rep-score">0 pts</span>
+      </div>
+    </div>
+  </header>
+
+  <nav class="filters" aria-label="Filtrar por categoría">
+    <button class="chip active" data-filter="todos">Todos</button>
+    <button class="chip" data-filter="derrumbe">🚧 Derrumbe</button>
+    <button class="chip" data-filter="inundacion">🌊 Inundación</button>
+    <button class="chip" data-filter="puente">🌉 Puente</button>
+    <button class="chip" data-filter="arbol">🌳 Árbol caído</button>
+    <button class="chip" data-filter="accidente">🚗 Accidente</button>
+    <button class="chip" data-filter="felino">🐆 Felino</button>
+    <button class="chip" data-filter="energia">⚡ Energía</button>
+    <button class="chip" data-filter="bloqueo">🚫 Bloqueo</button>
+    <button class="chip" data-filter="medica">🚑 Médica</button>
+    <button class="chip" data-filter="incendio">🔥 Incendio</button>
+    <button class="chip" data-filter="lluvia">🌧 Lluvia fuerte</button>
+    <button class="chip" data-filter="otro">Otro</button>
+  </nav>
+
+  <main class="feed-wrap">
+    <div id="emptyState" class="empty-state" hidden>
+      <p class="empty-glyph">〜</p>
+      <h2>Aún no hay reportes en esta categoría</h2>
+      <p>Sé la primera persona en avisar a la comunidad. Toca "Reportar incidente" para empezar.</p>
+    </div>
+    <section id="feed" class="feed"></section>
+  </main>
+
+  <button id="openFormBtn" class="fab">
+    <span class="fab-icon">＋</span> Reportar incidente
+  </button>
+
+</div>
+
+<!-- Report form modal -->
+<div id="formModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Nuevo reporte</h2>
+      <button id="closeFormBtn" class="icon-btn" aria-label="Cerrar">✕</button>
+    </div>
+
+    <form id="reportForm">
+      <label class="field">
+        <span>Título</span>
+        <input type="text" id="title" placeholder="Ej. Derrumbe bloquea acceso a Las Mangas" maxlength="80" required>
+      </label>
+
+      <label class="field">
+        <span>Categoría</span>
+        <select id="category" required>
+          <option value="derrumbe">🚧 Derrumbe</option>
+          <option value="inundacion">🌊 Inundación</option>
+          <option value="puente">🌉 Puente dañado</option>
+          <option value="arbol">🌳 Árbol caído</option>
+          <option value="accidente">🚗 Accidente</option>
+          <option value="felino">🐆 Avistamiento de felinos</option>
+          <option value="energia">⚡ Corte de energía</option>
+          <option value="bloqueo">🚫 Carretera bloqueada</option>
+          <option value="medica">🚑 Emergencia médica</option>
+          <option value="incendio">🔥 Incendio</option>
+          <option value="lluvia">🌧 Lluvias fuertes</option>
+          <option value="otro">Otro</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Descripción</span>
+        <textarea id="description" rows="3" placeholder="Describe qué pasó, dónde y qué deben saber otras personas" required></textarea>
+      </label>
+
+      <fieldset class="field severity-field">
+        <legend>Nivel de gravedad</legend>
+        <div class="severity-options">
+          <label class="sev-opt sev-low"><input type="radio" name="severity" value="leve" checked><span>💧 Leve</span></label>
+          <label class="sev-opt sev-mid"><input type="radio" name="severity" value="moderado"><span>💧💧 Moderado</span></label>
+          <label class="sev-opt sev-high"><input type="radio" name="severity" value="grave"><span>💧💧💧 Grave</span></label>
+        </div>
+      </fieldset>
+
+      <div class="field evidence-field">
+        <span>Evidencia (obligatoria: foto o ubicación)</span>
+        <div class="evidence-row">
+          <label class="upload-btn">
+            📷 Adjuntar foto
+            <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+          </label>
+          <button type="button" id="locateBtn" class="upload-btn">📍 Obtener ubicación GPS</button>
+        </div>
+        <div id="photoPreviewWrap" class="photo-preview-wrap" hidden>
+          <img id="photoPreview" alt="Previsualización de la foto adjunta">
+          <button type="button" id="removePhotoBtn" class="icon-btn">✕</button>
+        </div>
+        <p id="locationStatus" class="location-status">Sin ubicación todavía.</p>
+      </div>
+
+      <label class="field checkbox-field">
+        <input type="checkbox" id="isModerator">
+        <span>Publico como miembro de Patronato / COPECO / Alcaldía / Policía / Bomberos (marca oficial)</span>
+      </label>
+
+      <p id="formError" class="form-error" hidden></p>
+
+      <button type="submit" class="submit-btn">Publicar reporte</button>
+    </form>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
