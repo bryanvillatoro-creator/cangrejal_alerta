@@ -1,3 +1,11 @@
+import { db } from './firebase-config.js';
+import { currentUserData } from './auth.js';
+import {
+  collection, doc, addDoc, updateDoc, onSnapshot,
+  query, orderBy, serverTimestamp, arrayUnion, arrayRemove,
+  setDoc, getDoc, increment
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
 // ---------- Config ----------
 const CATEGORY_LABELS = {
   derrumbe: '🚧 Derrumbe',
@@ -16,57 +24,51 @@ const CATEGORY_LABELS = {
 const SEVERITY_ORDER = { leve: 1, moderado: 2, grave: 3 };
 const VERIFY_THRESHOLD = 3;   // net confirmations to mark as verified
 const DENY_THRESHOLD = 3;     // net denials to mark as incorrect
-const REPORTS_KEY = 'cangrejal_reports_v1';
-const SCORES_KEY = 'cangrejal_scores_v1';
+const MAX_PHOTO_DIMENSION = 1000; // px, se redimensiona antes de subir
 
 // ---------- State ----------
-let reports = loadReports();
-let scores = loadScores();
+let reports = [];
+let scores = {};
 let activeFilter = 'todos';
-let pendingPhoto = null;   // base64 string
+let pendingPhoto = null;   // base64 string (ya comprimida)
 let pendingLocation = null; // {lat, lng}
+let unsubReports = null;
+let unsubScores = null;
 
-// ---------- Storage helpers ----------
-function loadReports(){
-  try{ return JSON.parse(localStorage.getItem(REPORTS_KEY)) || []; }
-  catch(e){ return []; }
-}
-function saveReports(){
-  localStorage.setItem(REPORTS_KEY, JSON.stringify(reports));
-}
-function loadScores(){
-  try{ return JSON.parse(localStorage.getItem(SCORES_KEY)) || {}; }
-  catch(e){ return {}; }
-}
-function saveScores(){
-  localStorage.setItem(SCORES_KEY, JSON.stringify(scores));
-}
-function getUsername(){
-  const v = document.getElementById('username').value.trim();
-  return v || 'Anónimo';
+// ---------- Identity (viene de la cuenta autenticada, no editable) ----------
+function getIdentity(){
+  // currentUserData es un "live binding" exportado por auth.js
+  return currentUserData ? currentUserData.name : 'Anónimo';
 }
 
-// ---------- Reputation ----------
+// ---------- Reputation (colección "scores", doc id = nombre de usuario) ----------
 function scoreFor(name){ return scores[name] || 0; }
 function adjustScore(name, delta){
-  scores[name] = (scores[name] || 0) + delta;
-  saveScores();
-  renderUserRep();
+  setDoc(doc(db, 'scores', name), { points: increment(delta) }, { merge: true })
+    .catch(err => console.error('Error actualizando puntaje:', err));
 }
 function starsFor(score){
   const filled = Math.max(0, Math.min(5, Math.round(score / 10)));
   return '★'.repeat(filled) + '☆'.repeat(5 - filled);
 }
 function renderUserRep(){
-  const name = getUsername();
+  const name = getIdentity();
   const s = scoreFor(name);
-  document.getElementById('repStars').textContent = starsFor(s);
-  document.getElementById('repScore').textContent = `${s} pts`;
+  const starsEl = document.getElementById('repStars');
+  const scoreEl = document.getElementById('repScore');
+  if(starsEl) starsEl.textContent = starsFor(s);
+  if(scoreEl) scoreEl.textContent = `${s} pts`;
 }
 
 // ---------- Time formatting ----------
+function toMillis(ts){
+  if(!ts) return Date.now();
+  if(typeof ts === 'number') return ts;
+  if(ts.toMillis) return ts.toMillis(); // Firestore Timestamp
+  return Date.now();
+}
 function timeAgo(ts){
-  const diffMs = Date.now() - ts;
+  const diffMs = Date.now() - toMillis(ts);
   const min = Math.floor(diffMs / 60000);
   if(min < 1) return 'justo ahora';
   if(min < 60) return `hace ${min} min`;
@@ -80,9 +82,11 @@ function timeAgo(ts){
 function render(){
   const feed = document.getElementById('feed');
   const empty = document.getElementById('emptyState');
+  if(!feed) return;
+
   let list = [...reports];
   if(activeFilter !== 'todos') list = list.filter(r => r.category === activeFilter);
-  list.sort((a,b) => b.createdAt - a.createdAt);
+  list.sort((a,b) => toMillis(b.createdAt) - toMillis(a.createdAt));
 
   feed.innerHTML = '';
   if(list.length === 0){
@@ -92,10 +96,13 @@ function render(){
   empty.hidden = true;
 
   list.forEach(r => {
-    const net = r.confirms.length - r.denies.length;
+    const confirms = r.confirms || [];
+    const denies = r.denies || [];
+    const net = confirms.length - denies.length;
     const verified = net >= VERIFY_THRESHOLD;
     const incorrect = net <= -DENY_THRESHOLD;
     const myVote = getMyVote(r);
+    const displayAuthor = r.anonymous ? 'Anónimo' : r.author;
 
     const card = document.createElement('article');
     card.className = 'card';
@@ -112,8 +119,8 @@ function render(){
         <span style="color:var(--stone); font-size:12px; margin-left:4px;">${r.severity}</span>
       </div>
       <div class="meta-row">
-        <span>👤 ${escapeHtml(r.author)}</span>
-        <span>🕒 ${timeAgo(r.updatedAt)}</span>
+        <span>👤 ${escapeHtml(displayAuthor)}</span>
+        <span>🕒 ${timeAgo(r.updatedAt || r.createdAt)}</span>
         ${r.location ? `<span>📍 ${r.location.lat.toFixed(5)}, ${r.location.lng.toFixed(5)}</span>` : ''}
         <span>${incorrect ? '⚠️ Estado: no confirmado' : '🟡 Estado: activo'}</span>
       </div>
@@ -121,10 +128,10 @@ function render(){
       ${incorrect ? '<div class="verified-badge" style="color:var(--coral); border-color:rgba(216,86,74,0.4); background:rgba(216,86,74,0.1);">❌ Marcado como información incorrecta</div>' : ''}
       <div class="vote-row">
         <div class="vote-btns">
-          <button class="vote-btn confirm ${myVote === 'confirm' ? 'voted' : ''}" data-id="${r.id}" data-vote="confirm">✅ Confirmado (${r.confirms.length})</button>
-          <button class="vote-btn deny ${myVote === 'deny' ? 'voted' : ''}" data-id="${r.id}" data-vote="deny">❌ Incorrecto (${r.denies.length})</button>
+          <button class="vote-btn confirm ${myVote === 'confirm' ? 'voted' : ''}" data-id="${r.id}" data-vote="confirm">✅ Confirmado (${confirms.length})</button>
+          <button class="vote-btn deny ${myVote === 'deny' ? 'voted' : ''}" data-id="${r.id}" data-vote="deny">❌ Incorrecto (${denies.length})</button>
         </div>
-        <span class="reported-count">Reportado por ${r.confirms.length + 1} persona(s)</span>
+        <span class="reported-count">Reportado por ${confirms.length + 1} persona(s)</span>
       </div>
     `;
     feed.appendChild(card);
@@ -132,9 +139,9 @@ function render(){
 }
 
 function getMyVote(report){
-  const name = getUsername();
-  if(report.confirms.includes(name)) return 'confirm';
-  if(report.denies.includes(name)) return 'deny';
+  const name = getIdentity();
+  if((report.confirms || []).includes(name)) return 'confirm';
+  if((report.denies || []).includes(name)) return 'deny';
   return null;
 }
 
@@ -144,13 +151,39 @@ function escapeHtml(str){
   return div.innerHTML;
 }
 
+// ---------- Firestore listeners (arrancan solo cuando hay usuario aprobado) ----------
+function startListeners(){
+  if(unsubReports) return; // ya conectado
+
+  const reportsQuery = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
+  unsubReports = onSnapshot(reportsQuery, (snap) => {
+    reports = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    render();
+  }, (err) => {
+    console.error('Error escuchando reportes:', err);
+  });
+
+  unsubScores = onSnapshot(collection(db, 'scores'), (snap) => {
+    scores = {};
+    snap.docs.forEach(d => { scores[d.id] = d.data().points || 0; });
+    renderUserRep();
+  }, (err) => {
+    console.error('Error escuchando puntajes:', err);
+  });
+}
+
+window.addEventListener('cangrejal:userReady', () => {
+  startListeners();
+  renderUserRep();
+});
+
 // ---------- Voting ----------
-document.getElementById('feed').addEventListener('click', (e) => {
+document.getElementById('feed').addEventListener('click', async (e) => {
   const btn = e.target.closest('.vote-btn');
   if(!btn) return;
   const id = btn.dataset.id;
   const vote = btn.dataset.vote;
-  const name = getUsername();
+  const name = getIdentity();
   const report = reports.find(r => r.id === id);
   if(!report) return;
   if(report.author === name){
@@ -158,25 +191,39 @@ document.getElementById('feed').addEventListener('click', (e) => {
     return;
   }
 
-  // remove any previous vote by this user
-  report.confirms = report.confirms.filter(n => n !== name);
-  report.denies = report.denies.filter(n => n !== name);
+  const confirms = report.confirms || [];
+  const denies = report.denies || [];
+  const wasVerified = (confirms.length - denies.length) >= VERIFY_THRESHOLD;
+  const wasIncorrect = (denies.length - confirms.length) >= DENY_THRESHOLD;
 
-  const wasVerified = (report.confirms.length - report.denies.length) >= VERIFY_THRESHOLD;
-  const wasIncorrect = (report.denies.length - report.confirms.length) >= DENY_THRESHOLD;
+  // Simula el nuevo estado localmente para decidir si hay que ajustar puntaje
+  const newConfirms = confirms.filter(n => n !== name);
+  const newDenies = denies.filter(n => n !== name);
+  if(vote === 'confirm') newConfirms.push(name);
+  if(vote === 'deny') newDenies.push(name);
 
-  if(vote === 'confirm') report.confirms.push(name);
-  if(vote === 'deny') report.denies.push(name);
-  report.updatedAt = Date.now();
+  const nowVerified = (newConfirms.length - newDenies.length) >= VERIFY_THRESHOLD;
+  const nowIncorrect = (newDenies.length - newConfirms.length) >= DENY_THRESHOLD;
 
-  const nowVerified = (report.confirms.length - report.denies.length) >= VERIFY_THRESHOLD;
-  const nowIncorrect = (report.denies.length - report.confirms.length) >= DENY_THRESHOLD;
+  try{
+    await updateDoc(doc(db, 'reports', id), {
+      confirms: arrayRemove(name)
+    });
+    await updateDoc(doc(db, 'reports', id), {
+      denies: arrayRemove(name)
+    });
+    if(vote === 'confirm'){
+      await updateDoc(doc(db, 'reports', id), { confirms: arrayUnion(name), updatedAt: serverTimestamp() });
+    }else{
+      await updateDoc(doc(db, 'reports', id), { denies: arrayUnion(name), updatedAt: serverTimestamp() });
+    }
 
-  if(!wasVerified && nowVerified) adjustScore(report.author, 5);
-  if(!wasIncorrect && nowIncorrect) adjustScore(report.author, -5);
-
-  saveReports();
-  render();
+    if(!wasVerified && nowVerified) adjustScore(report.author, 5);
+    if(!wasIncorrect && nowIncorrect) adjustScore(report.author, -5);
+  }catch(err){
+    console.error('Error votando:', err);
+    alert('No se pudo registrar tu voto. Intenta de nuevo.');
+  }
 });
 
 // ---------- Filters ----------
@@ -207,17 +254,44 @@ function closeForm(){
   document.getElementById('formError').hidden = true;
 }
 
-// ---------- Photo upload ----------
-document.getElementById('photoInput').addEventListener('change', (e) => {
+// ---------- Photo upload (con redimensionado para no exceder el límite de Firestore) ----------
+function resizeImage(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if(width > MAX_PHOTO_DIMENSION || height > MAX_PHOTO_DIMENSION){
+          const scale = MAX_PHOTO_DIMENSION / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+document.getElementById('photoInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if(!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    pendingPhoto = reader.result;
+  try{
+    pendingPhoto = await resizeImage(file);
     document.getElementById('photoPreview').src = pendingPhoto;
     document.getElementById('photoPreviewWrap').hidden = false;
-  };
-  reader.readAsDataURL(file);
+  }catch(err){
+    console.error('Error procesando la foto:', err);
+    alert('No se pudo procesar la foto. Intenta con otra imagen.');
+  }
 });
 document.getElementById('removePhotoBtn').addEventListener('click', () => {
   pendingPhoto = null;
@@ -248,7 +322,7 @@ document.getElementById('locateBtn').addEventListener('click', () => {
 });
 
 // ---------- Submit report ----------
-document.getElementById('reportForm').addEventListener('submit', (e) => {
+document.getElementById('reportForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const errorEl = document.getElementById('formError');
   errorEl.hidden = true;
@@ -263,71 +337,44 @@ document.getElementById('reportForm').addEventListener('submit', (e) => {
   const description = document.getElementById('description').value.trim();
   const category = document.getElementById('category').value;
   const severity = document.querySelector('input[name="severity"]:checked').value;
-  const isOfficial = document.getElementById('isModerator').checked;
-  const author = getUsername();
-  const now = Date.now();
+  const isOfficial = ['isPatronato','isCopeco','isPolicia','isAlcaldia','isBomberos']
+    .some(id => document.getElementById(id).checked);
+  const anonymous = document.getElementById('isAnonimo').checked;
+  const author = getIdentity();
 
-  const report = {
-    id: 'r_' + now + '_' + Math.random().toString(36).slice(2,7),
-    title, description, category, severity,
-    photo: pendingPhoto,
-    location: pendingLocation,
-    author,
-    isOfficial,
-    createdAt: now,
-    updatedAt: now,
-    confirms: [],
-    denies: []
-  };
-  reports.unshift(report);
-  saveReports();
-  closeForm();
-  activeFilter = 'todos';
-  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-  document.querySelector('.chip[data-filter="todos"]').classList.add('active');
-  render();
-});
+  const submitBtn = e.target.querySelector('.submit-btn');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Publicando...';
 
-// ---------- Username persistence ----------
-const savedName = localStorage.getItem('cangrejal_username');
-if(savedName) document.getElementById('username').value = savedName;
-document.getElementById('username').addEventListener('input', () => {
-  localStorage.setItem('cangrejal_username', document.getElementById('username').value);
-  renderUserRep();
-  render();
+  try{
+    await addDoc(collection(db, 'reports'), {
+      title, description, category, severity,
+      photo: pendingPhoto,
+      location: pendingLocation,
+      author,
+      anonymous,
+      isOfficial,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      confirms: [],
+      denies: []
+    });
+    closeForm();
+    activeFilter = 'todos';
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    document.querySelector('.chip[data-filter="todos"]').classList.add('active');
+  }catch(err){
+    console.error('Error publicando reporte:', err);
+    errorEl.textContent = 'No se pudo publicar el reporte. Intenta de nuevo.';
+    errorEl.hidden = false;
+  }finally{
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Publicar reporte';
+  }
 });
 
 // ---------- Refresh relative times periodically ----------
 setInterval(render, 60000);
 
-// ---------- Seed example data on first run ----------
-function seedIfEmpty(){
-  if(reports.length > 0) return;
-  const now = Date.now();
-  reports = [
-    {
-      id: 'seed1', title: 'Derrumbe bloquea acceso a Las Mangas',
-      description: 'Grandes rocas y lodo cubren la vía después de la lluvia de anoche. No es posible pasar en vehículo.',
-      category: 'derrumbe', severity: 'grave', photo: null,
-      location: { lat: 15.75684, lng: -86.76582 },
-      author: 'Pedro López', isOfficial: false,
-      createdAt: now - 25*60000, updatedAt: now - 5*60000,
-      confirms: ['María', 'Juan', 'Carlos'], denies: []
-    },
-    {
-      id: 'seed2', title: 'Río Cangrejal con nivel alto cerca del puente colgante',
-      description: 'El caudal subió notablemente, se recomienda no cruzar a pie por ahora.',
-      category: 'inundacion', severity: 'moderado', photo: null,
-      location: { lat: 15.76920, lng: -86.78120 },
-      author: 'COPECO La Ceiba', isOfficial: true,
-      createdAt: now - 90*60000, updatedAt: now - 30*60000,
-      confirms: ['Ana'], denies: []
-    }
-  ];
-  saveReports();
-}
-
 // ---------- Init ----------
-seedIfEmpty();
-renderUserRep();
-render();
+render(); // pinta el estado vacío mientras se conectan los listeners

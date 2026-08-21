@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel admin — Cangrejal Alerta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark">🔒</span>
+      <h1>Acceso restringido</h1>
+      <p class="brand-sub" id="accessMsg">Verificando tu sesión...</p>
+    </div>
+    <a href="index.html" class="link-btn" style="display:block; text-align:center; margin-top:14px;">Volver al inicio</a>
+  </div>
+</div>
+
+<div id="adminRoot" class="admin-wrap" hidden>
+  <a href="index.html" class="back-link">← Volver a los reportes</a>
+  <h1>Panel de administrador</h1>
+  <p class="sub">Aprueba o rechaza las cuentas nuevas antes de que puedan ver y publicar reportes.</p>
+  <div id="pendingList" class="admin-list"></div>
+</div>
+
+<script type="module">
+  import { auth, db } from './firebase-config.js';
+  import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import {
+    collection, doc, getDoc, updateDoc, deleteDoc, onSnapshot, query, where
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  const authScreen = document.getElementById('authScreen');
+  const adminRoot = document.getElementById('adminRoot');
+  const accessMsg = document.getElementById('accessMsg');
+  const pendingList = document.getElementById('pendingList');
+
+  onAuthStateChanged(auth, async (user) => {
+    if(!user){
+      accessMsg.textContent = 'Debes iniciar sesión primero.';
+      return;
+    }
+    const snap = await getDoc(doc(db, 'users', user.uid));
+    const data = snap.exists() ? snap.data() : null;
+    if(!data || data.status !== 'admin'){
+      accessMsg.textContent = 'Tu cuenta no tiene permisos de administrador.';
+      return;
+    }
+    authScreen.hidden = true;
+    adminRoot.hidden = false;
+    listenPending();
+  });
+
+  function listenPending(){
+    const q = query(collection(db, 'users'), where('status', '==', 'pending'));
+    onSnapshot(q, (snap) => {
+      if(snap.empty){
+        pendingList.innerHTML = '<p class="admin-empty">No hay cuentas pendientes de aprobación.</p>';
+        return;
+      }
+      pendingList.innerHTML = '';
+      snap.forEach(docSnap => {
+        const u = docSnap.data();
+        const row = document.createElement('div');
+        row.className = 'admin-row';
+        row.innerHTML = `
+          <div class="who">
+            <strong>${escapeHtml(u.name || 'Sin nombre')}</strong>
+            <span>${escapeHtml(u.email || '')}</span>
+          </div>
+          <div class="actions">
+            <button class="admin-btn approve">Aprobar</button>
+            <button class="admin-btn reject">Rechazar</button>
+          </div>
+        `;
+        row.querySelector('.approve').addEventListener('click', () => approve(docSnap.id));
+        row.querySelector('.reject').addEventListener('click', () => reject(docSnap.id));
+        pendingList.appendChild(row);
+      });
+    });
+  }
+
+  async function approve(uid){
+    await updateDoc(doc(db, 'users', uid), { status: 'approved' });
+  }
+  async function reject(uid){
+    if(!confirm('¿Eliminar esta solicitud de cuenta? Esto no borra al usuario de Authentication, solo su perfil pendiente.')) return;
+    await deleteDoc(doc(db, 'users', uid));
+  }
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+</script>
+</body>
+</html>

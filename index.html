@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0"> <!--responsive-->
 <title>Cangrejal Alerta — Reportes comunitarios de la cuenca</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -17,6 +17,69 @@
   <path d="M0,200 C150,160 300,240 450,190 C600,140 750,220 900,180 C1000,155 1100,190 1200,170" />
 </svg>
 
+<!-- ======================= PANTALLA DE AUTENTICACIÓN ======================= -->
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark">🌿</span>
+      <h1>Cangrejal <em>Alerta</em></h1>
+      <p class="brand-sub">Cuenca del Río Cangrejal · reportes en tiempo real</p>
+    </div>
+
+    <div id="loginPanel">
+      <form id="loginForm">
+        <label class="field">
+          <span>Correo</span>
+          <input type="email" id="loginEmail" required autocomplete="email">
+        </label>
+        <label class="field">
+          <span>Contraseña</span>
+          <input type="password" id="loginPassword" required autocomplete="current-password">
+        </label>
+        <p id="loginError" class="form-error" hidden></p>
+        <button type="submit" class="submit-btn">Iniciar sesión</button>
+      </form>
+      <p class="auth-switch">¿No tienes cuenta? <button type="button" id="showRegisterBtn" class="link-btn">Regístrate</button></p>
+    </div>
+
+    <div id="registerPanel" hidden>
+      <form id="registerForm">
+        <label class="field">
+          <span>Nombre</span>
+          <input type="text" id="regName" maxlength="40" required autocomplete="name">
+        </label>
+        <label class="field">
+          <span>Correo</span>
+          <input type="email" id="regEmail" required autocomplete="email">
+        </label>
+        <label class="field">
+          <span>Contraseña</span>
+          <input type="password" id="regPassword" minlength="6" required autocomplete="new-password">
+        </label>
+        <p id="registerError" class="form-error" hidden></p>
+        <button type="submit" class="submit-btn">Crear cuenta</button>
+      </form>
+      <p class="auth-note">Tu cuenta debe ser aprobada por un administrador antes de poder usar el sitio.</p>
+      <p class="auth-switch">¿Ya tienes cuenta? <button type="button" id="showLoginBtn" class="link-btn">Inicia sesión</button></p>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= PANTALLA "CUENTA PENDIENTE" ======================= -->
+<div id="pendingScreen" class="auth-screen" hidden>
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark">⏳</span>
+      <h1>Cuenta en revisión</h1>
+      <p class="brand-sub">Un administrador debe aprobar tu registro antes de que puedas ver y publicar reportes.</p>
+    </div>
+    <button id="pendingLogoutBtn" class="upload-btn" style="width:100%;">Cerrar sesión</button>
+  </div>
+</div>
+
+<!-- ======================= APP (visible solo para usuarios aprobados) ======================= -->
+<div id="appRoot" hidden>
+
 <header class="topbar">
   <div class="brand">
     <span class="brand-mark">🌿</span>
@@ -26,11 +89,15 @@
     </div>
   </div>
   <div class="user-box">
-    <span class="user-label">Vecino/a</span>
-    <input id="username" type="text" placeholder="Tu nombre" maxlength="24">
+    <span class="user-label">Sesión iniciada</span>
+    <span id="currentUserName" class="current-user-name"></span>
     <div class="rep-line">
       <span id="repStars">☆☆☆☆☆</span>
       <span id="repScore" class="rep-score">0 pts</span>
+    </div>
+    <div class="user-actions">
+      <a id="adminLink" href="admin.html" class="link-btn" hidden>Panel admin</a>
+      <button id="logoutBtn" class="link-btn">Cerrar sesión</button>
     </div>
   </div>
 </header>
@@ -146,9 +213,9 @@
         <input type="checkbox" id="isBomberos">
         <span>Publico como miembro de Bomberos</span>
       </label>
-       <label class="field checkbox-field">
-        <input type="checkbox" id="isModerator">
-        <span>Público como anonimo</span>
+      <label class="field checkbox-field">
+        <input type="checkbox" id="isAnonimo">
+        <span>Publicar como anónimo</span>
       </label>
 
       <p id="formError" class="form-error" hidden></p>
@@ -158,6 +225,10 @@
   </div>
 </div>
 
-<script src="script.js"></script>
+</div><!-- /appRoot -->
+
+<script type="module" src="firebase-config.js"></script>
+<script type="module" src="auth.js"></script>
+<script type="module" src="script.js"></script>
 </body>
 </html>
