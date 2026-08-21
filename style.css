@@ -120,6 +120,39 @@ body{
   max-width:920px;
   margin:0 auto;
 }
+.feed-tabs{
+  display:flex; gap:6px;
+  padding:0 32px 14px;
+  border-bottom:1px solid var(--line);
+  max-width:920px;
+  margin:0 auto;
+}
+.tab-btn{
+  background:none;
+  border:none;
+  border-bottom:2px solid transparent;
+  color:var(--stone);
+  padding:10px 4px;
+  margin-right:16px;
+  font-size:14px;
+  font-family:var(--font-body);
+  font-weight:600;
+  cursor:pointer;
+  transition:color .15s, border-color .15s;
+}
+.tab-btn:hover{ color:var(--mist); }
+.tab-btn.active{ color:var(--amber); border-bottom-color:var(--amber); }
+.date-header{
+  grid-column:1 / -1;
+  font-family:var(--font-mono);
+  font-size:12px;
+  letter-spacing:0.5px;
+  text-transform:uppercase;
+  color:var(--stone-dim);
+  padding:14px 2px 2px;
+  border-top:1px solid var(--line);
+}
+.date-header:first-child{ border-top:none; padding-top:0; }
 .feed{
   display:grid;
   grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));
@@ -475,6 +508,7 @@ body{
 @media (max-width:640px){
   .topbar{padding:20px 18px 12px;}
   .filters{padding:6px 18px 16px;}
+  .feed-tabs{padding:0 18px 14px;}
   .feed-wrap{padding:8px 18px 120px;}
   .user-box{align-items:flex-start;}
   #username{text-align:left; width:140px;}

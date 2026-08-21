@@ -36,6 +36,8 @@ const MAX_PHOTO_DIMENSION = 1000; // px, se redimensiona antes de subir
 let reports = [];
 let scores = {};
 let activeFilter = 'todos';
+let activeTab = 'recent'; // 'recent' = últimas 24h, 'older' = historial
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 let pendingPhoto = null;   // base64 string (ya comprimida)
 let pendingLocation = null; // {lat, lng}
 let unsubReports = null;
@@ -84,6 +86,18 @@ function timeAgo(ts){
   return `hace ${d} d`;
 }
 
+function dateHeaderFor(ts){
+  const d = new Date(toMillis(ts));
+  const now = new Date();
+  const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / ONE_DAY_MS);
+  if(diffDays === 0) return 'Hoy';
+  if(diffDays === 1) return 'Ayer';
+  const opts = { day: 'numeric', month: 'long' };
+  if(d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString('es-HN', opts);
+}
+
 // ---------- Rendering ----------
 function render(){
   const feed = document.getElementById('feed');
@@ -92,15 +106,26 @@ function render(){
 
   let list = [...reports];
   if(activeFilter !== 'todos') list = list.filter(r => r.category === activeFilter);
+
+  const cutoff = Date.now() - ONE_DAY_MS;
+  list = list.filter(r => {
+    const isRecent = toMillis(r.createdAt) >= cutoff;
+    return activeTab === 'recent' ? isRecent : !isRecent;
+  });
+
   list.sort((a,b) => toMillis(b.createdAt) - toMillis(a.createdAt));
 
   feed.innerHTML = '';
   if(list.length === 0){
     empty.hidden = false;
+    empty.querySelector('h2').textContent = activeTab === 'recent'
+      ? 'Aún no hay reportes recientes en esta categoría'
+      : 'No hay reportes anteriores en esta categoría';
     return;
   }
   empty.hidden = true;
 
+  let lastHeader = null;
   list.forEach(r => {
     const confirms = r.confirms || [];
     const denies = r.denies || [];
@@ -110,6 +135,15 @@ function render(){
     const myVote = getMyVote(r);
     const displayAuthor = r.anonymous ? 'Anónimo' : r.author;
     const statusInfo = OPERATIONAL_STATUS[r.manualStatus || 'activo'];
+
+    const header = dateHeaderFor(r.createdAt);
+    if(header !== lastHeader){
+      const headerEl = document.createElement('div');
+      headerEl.className = 'date-header';
+      headerEl.textContent = header;
+      feed.appendChild(headerEl);
+      lastHeader = header;
+    }
 
     const card = document.createElement('article');
     card.className = 'card';
@@ -289,6 +323,20 @@ document.querySelectorAll('.chip').forEach(chip => {
   });
 });
 
+// ---------- Time period tabs ----------
+document.querySelectorAll('.tab-btn').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+    });
+    tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
+    activeTab = tab.dataset.tab;
+    render();
+  });
+});
+
 // ---------- Modal open/close ----------
 const formModal = document.getElementById('formModal');
 document.getElementById('openFormBtn').addEventListener('click', () => {
@@ -415,8 +463,16 @@ document.getElementById('reportForm').addEventListener('submit', async (e) => {
     });
     closeForm();
     activeFilter = 'todos';
+    activeTab = 'recent';
     document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
     document.querySelector('.chip[data-filter="todos"]').classList.add('active');
+    document.querySelectorAll('.tab-btn').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+    });
+    const recentTab = document.querySelector('.tab-btn[data-tab="recent"]');
+    recentTab.classList.add('active');
+    recentTab.setAttribute('aria-selected', 'true');
   }catch(err){
     console.error('Error publicando reporte:', err);
     errorEl.textContent = 'No se pudo publicar el reporte. Intenta de nuevo.';

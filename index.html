@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<script type="module">
+  <script type="module">
   // Import the functions you need from the SDKs you need
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
@@ -32,6 +32,7 @@
   const app = initializeApp(firebaseConfig);
   const analytics = getAnalytics(app);
 </script> 
+
 <!-- Contour texture, decorative -->
 <svg class="contour-bg" viewBox="0 0 1200 300" preserveAspectRatio="none" aria-hidden="true">
   <path d="M0,120 C150,80 300,160 450,110 C600,60 750,140 900,100 C1000,75 1100,110 1200,90" />
@@ -139,6 +140,11 @@
   <button class="chip" data-filter="lluvia">🌧 Lluvia fuerte</button>
   <button class="chip" data-filter="otro">Otro</button>
 </nav>
+
+<div class="feed-tabs" role="tablist" aria-label="Periodo de tiempo">
+  <button class="tab-btn active" data-tab="recent" role="tab" aria-selected="true">🕒 Últimas 24 horas</button>
+  <button class="tab-btn" data-tab="older" role="tab" aria-selected="false">🗂 Historial</button>
+</div>
 
 <main class="feed-wrap">
   <div id="emptyState" class="empty-state" hidden>
