@@ -15,6 +15,7 @@ import { getFirestore } from "https://www.gstatic.com/firebasejs/10.13.0/firebas
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+c// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyD1RUmv4lAFsRuk9h4XikIFHFOGJaV9XmA",
   authDomain: "cangrejal-alerta.firebaseapp.com",
