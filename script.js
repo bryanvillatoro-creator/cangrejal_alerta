@@ -1,4 +1,3 @@
-
 import { db } from './firebase-config.js';
 import { currentUserData } from './auth.js';
 import {
@@ -23,6 +22,12 @@ const CATEGORY_LABELS = {
   otro: 'Otro'
 };
 const SEVERITY_ORDER = { leve: 1, moderado: 2, grave: 3 };
+const OPERATIONAL_STATUS = {
+  activo:      { label: '🟡 Activo',       className: 'status-activo' },
+  atencion:    { label: '🔵 En atención',  className: 'status-atencion' },
+  resuelto:    { label: '🟢 Resuelto',     className: 'status-resuelto' },
+  descartado:  { label: '🔴 Descartado',   className: 'status-descartado' }
+};
 const VERIFY_THRESHOLD = 3;   // net confirmations to mark as verified
 const DENY_THRESHOLD = 3;     // net denials to mark as incorrect
 const MAX_PHOTO_DIMENSION = 1000; // px, se redimensiona antes de subir
@@ -104,6 +109,7 @@ function render(){
     const incorrect = net <= -DENY_THRESHOLD;
     const myVote = getMyVote(r);
     const displayAuthor = r.anonymous ? 'Anónimo' : r.author;
+    const statusInfo = OPERATIONAL_STATUS[r.manualStatus || 'activo'];
 
     const card = document.createElement('article');
     card.className = 'card';
@@ -123,7 +129,8 @@ function render(){
         <span>👤 ${escapeHtml(displayAuthor)}</span>
         <span>🕒 ${timeAgo(r.updatedAt || r.createdAt)}</span>
         ${r.location ? `<span>📍 ${r.location.lat.toFixed(5)}, ${r.location.lng.toFixed(5)}</span>` : ''}
-        <span>${incorrect ? '⚠️ Estado: no confirmado' : '🟡 Estado: activo'}</span>
+        <span class="status-badge ${statusInfo.className}">${statusInfo.label}</span>
+        ${incorrect ? '<span>⚠️ No confirmado por la comunidad</span>' : ''}
       </div>
       ${verified ? '<div class="verified-badge">🟢 Información verificada por la comunidad</div>' : ''}
       ${incorrect ? '<div class="verified-badge" style="color:var(--coral); border-color:rgba(216,86,74,0.4); background:rgba(216,86,74,0.1);">❌ Marcado como información incorrecta</div>' : ''}
@@ -134,9 +141,30 @@ function render(){
         </div>
         <span class="reported-count">Reportado por ${confirms.length + 1} persona(s)</span>
       </div>
+      ${statusControlHtml(r)}
     `;
     feed.appendChild(card);
   });
+}
+
+function canChangeStatus(report){
+  if(!currentUserData) return false;
+  if(currentUserData.status === 'admin') return true;
+  return report.author === currentUserData.name;
+}
+
+function statusControlHtml(report){
+  if(!canChangeStatus(report)) return '';
+  const current = report.manualStatus || 'activo';
+  const options = Object.entries(OPERATIONAL_STATUS)
+    .map(([value, cfg]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${cfg.label}</option>`)
+    .join('');
+  return `
+    <div class="status-control">
+      <select class="status-select" data-id="${report.id}">${options}</select>
+      <button type="button" class="status-update-btn" data-id="${report.id}">Actualizar estado</button>
+    </div>
+  `;
 }
 
 function getMyVote(report){
@@ -224,6 +252,30 @@ document.getElementById('feed').addEventListener('click', async (e) => {
   }catch(err){
     console.error('Error votando:', err);
     alert('No se pudo registrar tu voto. Intenta de nuevo.');
+  }
+});
+
+// ---------- Manual operational status (admin o autor del reporte) ----------
+document.getElementById('feed').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.status-update-btn');
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const select = document.querySelector(`.status-select[data-id="${id}"]`);
+  if(!select) return;
+  const report = reports.find(r => r.id === id);
+  if(!report || !canChangeStatus(report)) return;
+
+  btn.disabled = true;
+  try{
+    await updateDoc(doc(db, 'reports', id), {
+      manualStatus: select.value,
+      updatedAt: serverTimestamp()
+    });
+  }catch(err){
+    console.error('Error actualizando estado:', err);
+    alert('No se pudo actualizar el estado. Intenta de nuevo.');
+  }finally{
+    btn.disabled = false;
   }
 });
 
@@ -355,6 +407,7 @@ document.getElementById('reportForm').addEventListener('submit', async (e) => {
       author,
       anonymous,
       isOfficial,
+      manualStatus: 'activo',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       confirms: [],
