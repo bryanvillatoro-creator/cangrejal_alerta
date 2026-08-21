@@ -98,5 +98,29 @@
     return div.innerHTML;
   }
 </script>
+
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyD1RUmv4lAFsRuk9h4XikIFHFOGJaV9XmA",
+    authDomain: "cangrejal-alerta.firebaseapp.com",
+    projectId: "cangrejal-alerta",
+    storageBucket: "cangrejal-alerta.firebasestorage.app",
+    messagingSenderId: "939458535803",
+    appId: "1:939458535803:web:0c660e442712a41bac9dde",
+    measurementId: "G-PMCF0HZCL5"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
 </body>
 </html>
