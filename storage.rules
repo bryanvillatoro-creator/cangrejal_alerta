@@ -1,0 +1,19 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /reports/{userId}/{fileName} {
+
+      function isApprovedUser() {
+        return request.auth != null &&
+          firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.status in ['approved', 'admin'];
+      }
+
+      allow read: if isApprovedUser();
+
+      allow write: if isApprovedUser()
+                   && request.auth.uid == userId
+                   && request.resource.size < 25 * 1024 * 1024
+                   && (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*'));
+    }
+  }
+}

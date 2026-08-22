@@ -6,6 +6,7 @@
 // 3. Firebase te mostrará un objeto "firebaseConfig". Copia esos valores aquí abajo.
 // 4. Activa Authentication → Sign-in method → Correo/contraseña.
 // 5. Crea una base de datos Firestore (modo producción) y pega las reglas de FIREBASE_SETUP.md.
+// 5b. Activa Storage (Build → Storage → Comenzar) y pega storage.rules — necesario para fotos y videos.
 // 6. Lee FIREBASE_SETUP.md para el resto de los pasos (incluyendo cómo crear tu primer admin).
 // ============================================================
 
@@ -27,3 +28,4 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+

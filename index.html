@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <script type="module">
+   <script type="module">
   // Import the functions you need from the SDKs you need
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
@@ -206,17 +206,43 @@
       </fieldset>
 
       <div class="field evidence-field">
-        <span>Evidencia (obligatoria: foto o ubicación)</span>
+        <span>Evidencia (obligatoria: foto, video o ubicación)</span>
+
+        <p class="evidence-subhead">Fotografía</p>
         <div class="evidence-row">
           <label class="upload-btn">
-            📷 Adjuntar foto
-            <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+            📷 Tomar fotografía
+            <input type="file" id="photoCameraInput" accept="image/*" capture="environment" hidden>
           </label>
-          <button type="button" id="locateBtn" class="upload-btn">📍 Obtener ubicación GPS</button>
+          <label class="upload-btn">
+            🖼 Seleccionar de galería
+            <input type="file" id="photoGalleryInput" accept="image/*" hidden>
+          </label>
         </div>
-        <div id="photoPreviewWrap" class="photo-preview-wrap" hidden>
-          <img id="photoPreview" alt="Previsualización de la foto adjunta">
-          <button type="button" id="removePhotoBtn" class="icon-btn">✕</button>
+
+        <p class="evidence-subhead">Video (máx. 15 segundos)</p>
+        <div class="evidence-row">
+          <label class="upload-btn">
+            🎥 Grabar video
+            <input type="file" id="videoCameraInput" accept="video/*" capture="environment" hidden>
+          </label>
+          <label class="upload-btn">
+            🎞 Seleccionar de galería
+            <input type="file" id="videoGalleryInput" accept="video/*" hidden>
+          </label>
+        </div>
+
+        <div id="mediaPreviewWrap" class="photo-preview-wrap" hidden>
+          <img id="photoPreview" alt="Previsualización de la foto adjunta" hidden>
+          <video id="videoPreview" controls playsinline hidden></video>
+          <button type="button" id="removeMediaBtn" class="icon-btn">✕</button>
+        </div>
+        <p id="mediaError" class="location-status" hidden></p>
+        <p id="mediaUploadStatus" class="location-status" hidden></p>
+
+        <p class="evidence-subhead">Ubicación</p>
+        <div class="evidence-row">
+          <button type="button" id="locateBtn" class="upload-btn">📍 Obtener ubicación GPS</button>
         </div>
         <p id="locationStatus" class="location-status">Sin ubicación todavía.</p>
       </div>

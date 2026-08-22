@@ -70,6 +70,42 @@ service cloud.firestore {
 
 3. Publica las reglas.
 
+## 4b. Activar Firebase Storage (para fotos y videos)
+1. Menú lateral: **Storage** → **Comenzar** → sigue el asistente (modo producción,
+   misma región que Firestore si te lo pide).
+2. Ve a la pestaña **Reglas** de Storage y reemplaza el contenido por lo que
+   está en `storage.rules`:
+
+```
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /reports/{userId}/{fileName} {
+
+      function isApprovedUser() {
+        return request.auth != null &&
+          firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.status in ['approved', 'admin'];
+      }
+
+      allow read: if isApprovedUser();
+
+      allow write: if isApprovedUser()
+                   && request.auth.uid == userId
+                   && request.resource.size < 25 * 1024 * 1024
+                   && (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*'));
+    }
+  }
+}
+```
+
+3. Publica. Esto solo deja subir/leer fotos y videos a cuentas aprobadas, y
+   limita cada archivo a 25 MB.
+
+> **Por qué Storage y no Firestore para las fotos/videos:** cada documento
+> de Firestore tiene un límite de 1 MB. Un video de 15 segundos no cabe ahí,
+> así que las fotos y videos ahora se guardan como archivos reales en
+> Storage, y el reporte en Firestore solo guarda el enlace (`media.url`).
+
 ## 5. Crear tu primer usuario administrador
 Las reglas de arriba no permiten que nadie se auto-asigne `admin` (por seguridad).
 Para crear el primero:
@@ -91,11 +127,17 @@ corre en el navegador del usuario, GitHub Pages funciona sin cambios.
   de sobra para una comunidad de un valle. Si el sitio crece mucho, Firebase
   te avisa antes de cobrar nada (no hay cobro automático sin activar
   facturación).
-- **Fotos**: se guardan como imagen comprimida (máx. ~1000px, calidad 72%)
-  dentro del mismo documento de Firestore, porque cada documento tiene un
-  límite de 1 MB. Si más adelante quieres fotos de mayor calidad, el
-  siguiente paso natural es usar **Firebase Storage** (también gratis hasta
-  cierto límite) en vez de guardarlas en Firestore — puedo ayudarte con eso
-  cuando lo necesites.
+- **Storage (Spark)**: 5 GB de almacenamiento y 1 GB de descarga gratis por
+  día. Las fotos se comprimen antes de subirse (máx. ~1000px, calidad 72%);
+  los videos se suben tal cual, limitados a 15 segundos y 25 MB por archivo.
 - Si alguna cuenta hace mal uso del sitio, el admin puede volver su `status`
   a algo distinto de `approved`/`admin` para bloquearla, sin borrar su cuenta.
+
+## Siguiente fase sugerida: reportes offline
+Ahora mismo, si no hay conexión a internet, el formulario no puede publicar
+(sí se puede tomar la foto o grabar el video con la cámara, pero falta
+conexión para subirlos). El propio requerimiento ya lo marca como mejora
+futura: guardar el reporte y su evidencia en el dispositivo (por ejemplo,
+con IndexedDB) y reenviarlo automáticamente en cuanto vuelva la señal, usando
+un Service Worker con Background Sync. Es un cambio de arquitectura más
+grande — avísame cuando quieran abordarlo y lo planificamos aparte.

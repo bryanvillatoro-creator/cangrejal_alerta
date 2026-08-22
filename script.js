@@ -1,10 +1,13 @@
-import { db } from './firebase-config.js';
+import { db, auth, storage } from './firebase-config.js';
 import { currentUserData } from './auth.js';
 import {
   collection, doc, addDoc, updateDoc, onSnapshot,
   query, orderBy, serverTimestamp, arrayUnion, arrayRemove,
   setDoc, getDoc, increment
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import {
+  ref, uploadBytes, getDownloadURL
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
 
 // ---------- Config ----------
 const CATEGORY_LABELS = {
@@ -31,6 +34,11 @@ const OPERATIONAL_STATUS = {
 const VERIFY_THRESHOLD = 3;   // net confirmations to mark as verified
 const DENY_THRESHOLD = 3;     // net denials to mark as incorrect
 const MAX_PHOTO_DIMENSION = 1000; // px, se redimensiona antes de subir
+const MAX_VIDEO_SECONDS = 15;
+const MAX_VIDEO_BYTES = 25 * 1024 * 1024; // 25 MB, límite práctico de subida
+const DUPLICATE_RADIUS_M = 300;          // metros de cercanía para considerarlo posible duplicado
+const DUPLICATE_WINDOW_MS = 3 * 60 * 60 * 1000; // 3 horas de ventana de tiempo
+const EARTH_RADIUS_M = 6371000;
 
 // ---------- State ----------
 let reports = [];
@@ -38,10 +46,35 @@ let scores = {};
 let activeFilter = 'todos';
 let activeTab = 'recent'; // 'recent' = últimas 24h, 'older' = historial
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-let pendingPhoto = null;   // base64 string (ya comprimida)
+let pendingMedia = null;   // { type: 'image'|'video', file: File, previewUrl: string }
 let pendingLocation = null; // {lat, lng}
 let unsubReports = null;
 let unsubScores = null;
+
+// ---------- Geografía: distancia y detección de duplicados ----------
+function distanceMeters(a, b){
+  const toRad = (deg) => deg * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+// Reportes activos de la misma categoría, cerca en espacio y tiempo de una referencia dada.
+function findNearbyReports(category, location, referenceMs, excludeId){
+  if(!location) return [];
+  return reports.filter(r => {
+    if(r.id === excludeId) return false;
+    if(r.category !== category) return false;
+    if(!r.location) return false;
+    if(r.manualStatus === 'resuelto' || r.manualStatus === 'descartado') return false;
+    const dist = distanceMeters(location, r.location);
+    const timeDiff = Math.abs(referenceMs - toMillis(r.createdAt));
+    return dist <= DUPLICATE_RADIUS_M && timeDiff <= DUPLICATE_WINDOW_MS;
+  });
+}
 
 // ---------- Identity (viene de la cuenta autenticada, no editable) ----------
 function getIdentity(){
@@ -135,6 +168,7 @@ function render(){
     const myVote = getMyVote(r);
     const displayAuthor = r.anonymous ? 'Anónimo' : r.author;
     const statusInfo = OPERATIONAL_STATUS[r.manualStatus || 'activo'];
+    const nearbyCount = findNearbyReports(r.category, r.location, toMillis(r.createdAt), r.id).length;
 
     const header = dateHeaderFor(r.createdAt);
     if(header !== lastHeader){
@@ -154,7 +188,9 @@ function render(){
       </div>
       <h3>${escapeHtml(r.title)}</h3>
       <p class="desc">${escapeHtml(r.description)}</p>
-      ${r.photo ? `<img class="evidence" src="${r.photo}" alt="Foto del incidente">` : ''}
+      ${nearbyCount > 0 ? `<div class="duplicate-note">🔁 ${nearbyCount} reporte${nearbyCount > 1 ? 's' : ''} similar${nearbyCount > 1 ? 'es' : ''} cerca, en tiempo y ubicación parecidos</div>` : ''}
+      ${r.media && r.media.type === 'image' ? `<img class="evidence" src="${r.media.url}" alt="Foto del incidente">` : ''}
+      ${r.media && r.media.type === 'video' ? `<video class="evidence" src="${r.media.url}" controls playsinline preload="metadata"></video>` : ''}
       <div class="gauge ${r.severity}">
         ${[1,2,3].map(i => `<span class="drop ${i <= SEVERITY_ORDER[r.severity] ? 'filled' : ''}">💧</span>`).join('')}
         <span style="color:var(--stone); font-size:12px; margin-left:4px;">${r.severity}</span>
@@ -347,16 +383,15 @@ formModal.addEventListener('click', (e) => { if(e.target === formModal) closeFor
 function closeForm(){
   formModal.hidden = true;
   document.getElementById('reportForm').reset();
-  pendingPhoto = null;
+  clearPendingMedia();
   pendingLocation = null;
-  document.getElementById('photoPreviewWrap').hidden = true;
   document.getElementById('locationStatus').textContent = 'Sin ubicación todavía.';
   document.getElementById('locationStatus').classList.remove('ok');
   document.getElementById('formError').hidden = true;
 }
 
-// ---------- Photo upload (con redimensionado para no exceder el límite de Firestore) ----------
-function resizeImage(file){
+// ---------- Evidencia multimedia (foto o video, desde cámara o galería) ----------
+function resizeImageToBlob(file){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -372,7 +407,7 @@ function resizeImage(file){
         canvas.width = width;
         canvas.height = height;
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.72));
+        canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('No se pudo comprimir la imagen')), 'image/jpeg', 0.72);
       };
       img.onerror = reject;
       img.src = reader.result;
@@ -382,23 +417,127 @@ function resizeImage(file){
   });
 }
 
-document.getElementById('photoInput').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
+function getVideoDuration(file){
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(video.src);
+      resolve(video.duration);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(video.src);
+      reject(new Error('No se pudo leer el video'));
+    };
+    video.src = URL.createObjectURL(file);
+  });
+}
+
+function clearPendingMedia(){
+  if(pendingMedia && pendingMedia.previewUrl) URL.revokeObjectURL(pendingMedia.previewUrl);
+  pendingMedia = null;
+  ['photoCameraInput','photoGalleryInput','videoCameraInput','videoGalleryInput'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('mediaPreviewWrap').hidden = true;
+  document.getElementById('photoPreview').hidden = true;
+  document.getElementById('videoPreview').hidden = true;
+  document.getElementById('videoPreview').removeAttribute('src');
+  hideMediaError();
+}
+
+function showMediaError(msg){
+  const el = document.getElementById('mediaError');
+  el.textContent = msg;
+  el.hidden = false;
+}
+function hideMediaError(){
+  document.getElementById('mediaError').hidden = true;
+}
+
+async function handleMediaFile(file, kind){
+  hideMediaError();
   if(!file) return;
-  try{
-    pendingPhoto = await resizeImage(file);
-    document.getElementById('photoPreview').src = pendingPhoto;
-    document.getElementById('photoPreviewWrap').hidden = false;
-  }catch(err){
-    console.error('Error procesando la foto:', err);
-    alert('No se pudo procesar la foto. Intenta con otra imagen.');
+
+  if(kind === 'image' && !file.type.startsWith('image/')){
+    showMediaError('El archivo seleccionado no es una imagen.');
+    return;
   }
-});
-document.getElementById('removePhotoBtn').addEventListener('click', () => {
-  pendingPhoto = null;
-  document.getElementById('photoInput').value = '';
-  document.getElementById('photoPreviewWrap').hidden = true;
-});
+  if(kind === 'video' && !file.type.startsWith('video/')){
+    showMediaError('El archivo seleccionado no es un video.');
+    return;
+  }
+
+  if(kind === 'video'){
+    if(file.size > MAX_VIDEO_BYTES){
+      showMediaError('El video es demasiado pesado (máx. 25 MB). Graba uno más corto o con menor calidad.');
+      return;
+    }
+    let duration;
+    try{
+      duration = await getVideoDuration(file);
+    }catch(err){
+      showMediaError('No se pudo leer el video. Intenta con otro archivo.');
+      return;
+    }
+    if(duration > MAX_VIDEO_SECONDS + 0.5){
+      showMediaError(`El video dura ${duration.toFixed(1)}s. El máximo permitido es ${MAX_VIDEO_SECONDS} segundos.`);
+      return;
+    }
+  }
+
+  if(pendingMedia && pendingMedia.previewUrl) URL.revokeObjectURL(pendingMedia.previewUrl);
+  const previewUrl = URL.createObjectURL(file);
+  pendingMedia = { type: kind, file, previewUrl };
+
+  const wrap = document.getElementById('mediaPreviewWrap');
+  const imgEl = document.getElementById('photoPreview');
+  const videoEl = document.getElementById('videoPreview');
+  wrap.hidden = false;
+  if(kind === 'image'){
+    imgEl.src = previewUrl;
+    imgEl.hidden = false;
+    videoEl.hidden = true;
+    videoEl.removeAttribute('src');
+  }else{
+    videoEl.src = previewUrl;
+    videoEl.hidden = false;
+    imgEl.hidden = true;
+    imgEl.removeAttribute('src');
+  }
+}
+
+document.getElementById('photoCameraInput').addEventListener('change', (e) => handleMediaFile(e.target.files[0], 'image'));
+document.getElementById('photoGalleryInput').addEventListener('change', (e) => handleMediaFile(e.target.files[0], 'image'));
+document.getElementById('videoCameraInput').addEventListener('change', (e) => handleMediaFile(e.target.files[0], 'video'));
+document.getElementById('videoGalleryInput').addEventListener('change', (e) => handleMediaFile(e.target.files[0], 'video'));
+
+document.getElementById('removeMediaBtn').addEventListener('click', clearPendingMedia);
+
+// Sube la evidencia pendiente (foto comprimida o video) a Firebase Storage y devuelve { type, url }
+async function uploadPendingMedia(){
+  if(!pendingMedia || !auth.currentUser) return null;
+  const uid = auth.currentUser.uid;
+  const statusEl = document.getElementById('mediaUploadStatus');
+  statusEl.hidden = false;
+
+  let blobToUpload = pendingMedia.file;
+  let extension = pendingMedia.type === 'image' ? 'jpg' : (pendingMedia.file.name.split('.').pop() || 'mp4');
+  let contentType = pendingMedia.type === 'image' ? 'image/jpeg' : pendingMedia.file.type;
+
+  if(pendingMedia.type === 'image'){
+    statusEl.textContent = 'Comprimiendo foto...';
+    blobToUpload = await resizeImageToBlob(pendingMedia.file);
+  }
+
+  statusEl.textContent = pendingMedia.type === 'image' ? 'Subiendo foto...' : 'Subiendo video...';
+  const path = `reports/${uid}/${Date.now()}_${Math.random().toString(36).slice(2,7)}.${extension}`;
+  const fileRef = ref(storage, path);
+  await uploadBytes(fileRef, blobToUpload, { contentType });
+  const url = await getDownloadURL(fileRef);
+  statusEl.hidden = true;
+  return { type: pendingMedia.type, url };
+}
 
 // ---------- Geolocation ----------
 document.getElementById('locateBtn').addEventListener('click', () => {
@@ -422,14 +561,34 @@ document.getElementById('locateBtn').addEventListener('click', () => {
   );
 });
 
+
 // ---------- Submit report ----------
+// Añade el voto "confirmado" del usuario actual a un reporte existente,
+// en vez de crear uno nuevo (se usa cuando el usuario acepta que es un duplicado).
+async function confirmExistingInsteadOfDuplicate(existingReport, author){
+  const confirms = existingReport.confirms || [];
+  const denies = existingReport.denies || [];
+  const wasVerified = (confirms.length - denies.length) >= VERIFY_THRESHOLD;
+
+  await updateDoc(doc(db, 'reports', existingReport.id), { confirms: arrayRemove(author) });
+  await updateDoc(doc(db, 'reports', existingReport.id), { denies: arrayRemove(author) });
+  await updateDoc(doc(db, 'reports', existingReport.id), {
+    confirms: arrayUnion(author),
+    updatedAt: serverTimestamp()
+  });
+
+  const newConfirms = confirms.filter(n => n !== author).concat(author);
+  const nowVerified = (newConfirms.length - denies.filter(n => n !== author).length) >= VERIFY_THRESHOLD;
+  if(!wasVerified && nowVerified) adjustScore(existingReport.author, 5);
+}
+
 document.getElementById('reportForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const errorEl = document.getElementById('formError');
   errorEl.hidden = true;
 
-  if(!pendingPhoto && !pendingLocation){
-    errorEl.textContent = 'Se requiere al menos una fotografía o la ubicación GPS para publicar.';
+  if(!pendingMedia && !pendingLocation){
+    errorEl.textContent = 'Se requiere al menos una fotografía, un video o la ubicación GPS para publicar.';
     errorEl.hidden = false;
     return;
   }
@@ -443,14 +602,42 @@ document.getElementById('reportForm').addEventListener('submit', async (e) => {
   const anonymous = document.getElementById('isAnonimo').checked;
   const author = getIdentity();
 
+  // ---- Chequeo de posible duplicado por cercanía geográfica y tiempo ----
+  if(pendingLocation){
+    const duplicate = findNearbyReports(category, pendingLocation, Date.now(), null)[0];
+    if(duplicate){
+      const distM = Math.round(distanceMeters(pendingLocation, duplicate.location));
+      const minsAgo = Math.max(0, Math.round((Date.now() - toMillis(duplicate.createdAt)) / 60000));
+      const dupAuthor = duplicate.anonymous ? 'un usuario anónimo' : duplicate.author;
+      const useExisting = confirm(
+        `Ya hay un reporte de "${CATEGORY_LABELS[category]}" publicado hace ${minsAgo} min, ` +
+        `a ${distM} m de tu ubicación (por ${dupAuthor}).\n\n` +
+        `Aceptar = confirmar ese reporte existente (recomendado, evita duplicados).\n` +
+        `Cancelar = publicar el tuyo como un reporte nuevo y distinto.`
+      );
+      if(useExisting){
+        try{
+          await confirmExistingInsteadOfDuplicate(duplicate, author);
+          closeForm();
+        }catch(err){
+          console.error('Error confirmando reporte existente:', err);
+          errorEl.textContent = 'No se pudo confirmar el reporte existente. Intenta de nuevo.';
+          errorEl.hidden = false;
+        }
+        return;
+      }
+    }
+  }
+
   const submitBtn = e.target.querySelector('.submit-btn');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Publicando...';
 
   try{
+    const media = await uploadPendingMedia();
     await addDoc(collection(db, 'reports'), {
       title, description, category, severity,
-      photo: pendingPhoto,
+      media, // { type: 'image'|'video', url } o null
       location: pendingLocation,
       author,
       anonymous,
@@ -475,7 +662,8 @@ document.getElementById('reportForm').addEventListener('submit', async (e) => {
     recentTab.setAttribute('aria-selected', 'true');
   }catch(err){
     console.error('Error publicando reporte:', err);
-    errorEl.textContent = 'No se pudo publicar el reporte. Intenta de nuevo.';
+    document.getElementById('mediaUploadStatus').hidden = true;
+    errorEl.textContent = 'No se pudo publicar el reporte. Revisa tu conexión e intenta de nuevo.';
     errorEl.hidden = false;
   }finally{
     submitBtn.disabled = false;
